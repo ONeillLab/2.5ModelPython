@@ -1,5 +1,9 @@
 import math
 import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+import pandas as pd
 
 # 2.5 layer SW polar cap model as described in:
 #
@@ -21,20 +25,31 @@ import numpy as np
 ################# Metaparameters ##############################
 
 simnumber = 2  # number of simulations you want to run
+tmax = 1000
+
+#fig, ax = plt.subplots()
+#frames = []
+
+fig = plt.figure()
+ax = fig.add_subplot(111)
+div = make_axes_locatable(ax)
+cax = div.append_axes('right', '5%', '5%')
+frames = []
+times = []
 
 ################# Controlling parameters ######################
 # these are the only parameters you should vary to explore physical space
 
 ### ND = nondimensional
 
-c22h = 9  # ND 2nd baroclinic gravity wave speed squared
-c12h = 10  # ND 1st baroclinic gravity wave speed squared
+c22h = 3#9  # ND 2nd baroclinic gravity wave speed squared
+c12h = 4#10  # ND 1st baroclinic gravity wave speed squared
 H1H2 = 1  # ND upper to lower layer height ratio
-Bt = (1**2) / 2 / (30**2)  # ND scaled beta Ld2^2/4a^2
-Br2 = 1.5  # ND scaled storm size: Burger number Ld2^2/Rst^2
+Bt = (1**2) / 2 / (50**2)  # ND scaled beta Ld2^2/4a^2 ### adjust this
+Br2 = 1#1.5  # ND scaled storm size: Burger number Ld2^2/Rst^2
 p1p2 = 0.95  # ND upper to lower layer density ratio
-tstf = 48  # ND storm duration tst*f0
-tstpf = 60  # ND period between forced storms tstp*f0
+tstf = 6#48  # ND storm duration tst*f0
+tstpf = 15#60  # ND period between forced storms tstp*f0
 tradf = 2000  # ND Newtonian damping of layer thickness trad*f0
 Ar = 0.15  # ND areal storm coverage
 Re = 5e4  # ND Reynolds number
@@ -45,6 +60,7 @@ Wsh = 0.03 / 2  # ND convective Rossby number
 
 gm = p1p2 * c22h / c12h * H1H2  # ND reduced gravity
 aOLd = np.sqrt(1 / Bt / 2)  # ND planetary radius to deformation radius ratio
+print(aOLd)
 L = 3 * np.pi / 9 * aOLd  ###???  # ND num = ceil(numfrc.*L.^2./Br2)
 num = round(Ar * (L**2) * Br2 / np.pi)  # number of storms
 deglim = 90 - 3 * L / 2 * aOLd * 180 / np.pi  # domain size [degrees]
@@ -56,9 +72,9 @@ AB = 2  # order of Adams-Bashforth scheme (2 or 3)
 layers = 2.5  # # of layers (2 or 2.5)
 n = 2  # order of Laplacian '2' is hyperviscosity
 kappa = 1e-6
-ord = 2  # must equal 1 for Glenn's order, otherwise for Sadourney's (squares before avgs)
-
-tmax = 8000
+ord = (
+    2  # must equal 1 for Glenn's order, otherwise for Sadourney's (squares before avgs)
+)
 spongedrag1 = 0.1
 spongedrag2 = 0.1
 
@@ -89,14 +105,14 @@ dx = 1 / 5
 dt = 1 / (2**8)
 dtinv = 1 / dt
 sampfreq = 5
-tpl = sampfreq*dtinv
+tpl = sampfreq * dtinv
 
 N = math.ceil(L / dx)
 L = N * dx
 
 l = np.concatenate((np.array([N]), np.arange(1, N)), axis=None)
 
-l2 = np.concatenate((np.arange(N - 1, N+1), np.arange(1, N - 1)), axis=None)
+l2 = np.concatenate((np.arange(N - 1, N + 1), np.arange(1, N - 1)), axis=None)
 
 r = np.concatenate((np.arange(2, N + 1), np.array([1])), axis=None)
 
@@ -112,7 +128,9 @@ r2 = np.concatenate((np.arange(3, N + 1), np.arange(1, 3)), axis=None)
 N +0.5 or N?
 
 """
-x, y = np.meshgrid(np.arange(0.5, N + 0.5) * dx - L / 2, np.arange(0.5, N + 0.5) * dx - L / 2)
+x, y = np.meshgrid(
+    np.arange(0.5, N + 0.5) * dx - L / 2, np.arange(0.5, N + 0.5) * dx - L / 2
+)
 H = 1 + 0 * x
 eta = 0 * x
 h1 = 0 * x + 1
@@ -130,13 +148,15 @@ v2 = v1
 
 # zeta grid
 x, y = np.meshgrid(np.arange(0, N) * dx - L / 2, np.arange(0, N) * dx - L / 2)
-rdist = np.sqrt((x ** 2) + (y ** 2))
+rdist = np.sqrt((x**2) + (y**2))
 outerlim = L / 2 - 0.5
-rlim = (rdist <= outerlim).astype(float)  # 1* converts the Boolean values to integers 1 or 0
+rlim = (rdist <= outerlim).astype(
+    float
+)  # 1* converts the Boolean values to integers 1 or 0
 
 
 sponge1 = np.ones(N) * np.maximum(rdist - outerlim, 0)
-sponge1 = sponge1 / np.max(sponge1) #####
+sponge1 = sponge1 / np.max(sponge1)  #####
 spdrag1 = spongedrag1 * sponge1
 
 
@@ -169,11 +189,9 @@ spdrag2 = spongedrag2 * sponge2
 
 
 def pairshapeN2(locs, x, y, Br2, Wsh, N, dx):
-    rad = math.ceil(np.sqrt(1/Br2) / dx)
+    rad = math.ceil(np.sqrt(1 / Br2) / dx)
     xg, yg = np.meshgrid(np.arange(-rad, rad + 1), np.arange(-rad, rad + 1))
-    gaus = Wsh * np.exp(
-        -(Br2 * dx**2) / 0.3606 * ((xg + 0.5) ** 2 + (yg + 0.5) ** 2)
-    )
+    gaus = Wsh * np.exp(-(Br2 * dx**2) / 0.3606 * ((xg + 0.5) ** 2 + (yg + 0.5) ** 2))
 
     wlayer = np.zeros(np.shape(x))
 
@@ -185,10 +203,13 @@ def pairshapeN2(locs, x, y, Br2, Wsh, N, dx):
     corners = nlocs - rad
     corners = corners.astype(np.int64)
     while jj <= np.shape(locs)[0]:
-        bufmat[(corners[jj - 1, 0] - 1):(corners[jj - 1, 0] + 2*rad),(corners[jj - 1, 1] - 1):(corners[jj - 1, 1] + 2*rad)] += gaus
-        
-       # bufmat[(corners[jj - 1, 0] - 1):(corners[jj - 1, 0] + 2*rad),(corners[jj - 1, 1] - 1):(corners[jj - 1, 1] + 2*rad)] + gaus
-        
+        bufmat[
+            (corners[jj - 1, 0] - 1) : (corners[jj - 1, 0] + 2 * rad),
+            (corners[jj - 1, 1] - 1) : (corners[jj - 1, 1] + 2 * rad),
+        ] += gaus
+
+        # bufmat[(corners[jj - 1, 0] - 1):(corners[jj - 1, 0] + 2*rad),(corners[jj - 1, 1] - 1):(corners[jj - 1, 1] + 2*rad)] + gaus
+
         jj += 1
 
     wlayer = bufmat[buf : N + buf, buf : N + buf]
@@ -209,9 +230,9 @@ def pairshapeN2(locs, x, y, Br2, Wsh, N, dx):
     addlayer4[:, -buf:] = bufmat[buf : N + buf, 0:buf]
 
     addcorn1[0:buf, 0:buf] = bufmat[buf + N :, buf + N :]
-    addcorn2[-buf :, -buf :] = bufmat[0:buf, 0:buf]
-    addcorn3[0:buf, -buf :] = bufmat[buf + N :, 0:buf]
-    addcorn4[-buf :, 0:buf] = bufmat[0:buf, buf + N :]
+    addcorn2[-buf:, -buf:] = bufmat[0:buf, 0:buf]
+    addcorn3[0:buf, -buf:] = bufmat[buf + N :, 0:buf]
+    addcorn4[-buf:, 0:buf] = bufmat[0:buf, buf + N :]
 
     wlayer = (
         wlayer
@@ -263,15 +284,22 @@ def viscN2(vel, Re, n):
 
     if n == 1:
 
-        field = -4 * vel + np.roll(vel, 1, axis=0) + np.roll(vel, -1, axis=0) + np.roll(vel, 1, axis=1) + np.roll(vel, -1, axis=1)
+        field = (
+            -4 * vel
+            + np.roll(vel, 1, axis=0)
+            + np.roll(vel, -1, axis=0)
+            + np.roll(vel, 1, axis=1)
+            + np.roll(vel, -1, axis=1)
+        )
         field = (
             n / dx**2
         ) * field  # in Morgan's code the n in this line is 'nu', but that's never defined; I think it's a typo
 
     if n == 2:
 
-        field = (20 * vel + 
-            2 * np.roll(np.roll(vel, 1, axis=0), 1, axis=1)
+        field = (
+            20 * vel
+            + 2 * np.roll(np.roll(vel, 1, axis=0), 1, axis=1)
             + 2 * np.roll(np.roll(vel, 1, axis=0), -1, axis=1)
             + 2 * np.roll(np.roll(vel, -1, axis=0), 1, axis=1)
             + 2 * np.roll(np.roll(vel, -1, axis=0), -1, axis=1)
@@ -281,7 +309,7 @@ def viscN2(vel, Re, n):
             - 8 * np.roll(vel, -1, axis=1)
             + np.roll(vel, 2, axis=0)
             + np.roll(vel, -2, axis=0)
-            + np.roll(vel, 2, axis=0) # TYPO ?
+            + np.roll(vel, 2, axis=0)  # TYPO ?
             + np.roll(vel, -2, axis=1)
         )
 
@@ -302,15 +330,14 @@ def BernN2(u1, v1, u2, v2, gm, c22h, c12h, h1, h2, ord):
         B2 = "broke"
     else:
         B1 = (
-            c12h
-            * h1
+            c12h * h1
             + c22h * h2
             + 0.25
             * (
-                (u1 ** 2)
-                + (np.roll(u1, -1, axis=1)**2)
-                + (v1 ** 2)
-                + (np.roll(v1, -1, axis=0)**2)
+                (u1**2)
+                + (np.roll(u1, -1, axis=1) ** 2)
+                + (v1**2)
+                + (np.roll(v1, -1, axis=0) ** 2)
             )
         )
 
@@ -318,12 +345,13 @@ def BernN2(u1, v1, u2, v2, gm, c22h, c12h, h1, h2, ord):
             gm * c12h * h1
             + c22h * h2
             + 0.25
-            * ((u1**2)
+            * (
+                (u1**2)
                 + (np.roll(u1, -1, axis=1) ** 2)
-                + (v1 ** 2)
-                + (np.roll(v1, -1, axis=0) ** 2))
+                + (v1**2)
+                + (np.roll(v1, -1, axis=0) ** 2)
             )
-        
+        )
 
     return B1, B2
 
@@ -351,7 +379,7 @@ def BernN2(u1, v1, u2, v2, gm, c22h, c12h, h1, h2, ord):
 #####################################
 #####################################
 
-locs = paircountN2(num, N-1)  # paircountN2 is a helper function
+locs = paircountN2(num, N - 1)  # paircountN2 is a helper function
 mode = 1  # set mode to 1
 
 match mode:
@@ -482,7 +510,7 @@ while t <= tmax + dt / 2:
         tmp = u2
         u2 = 1.5 * u2 - 0.5 * u2_p
         u2_p = tmp
-        tmp = v1 
+        tmp = v1
         v1 = 1.5 * v1 - 0.5 * v1_p
         v1_p = tmp
         tmp = v2
@@ -546,8 +574,16 @@ while t <= tmax + dt / 2:
         dv1dt = dv1dt - spdrag1 * v1
         dv2dt = dv2dt - spdrag2 * v2
 
-    zeta1 = 1 - Bt * (rdist ** 2) + (1 / dx) * (v1 - np.roll(v1, 1, axis=1) + np.roll(u1, 1, axis=0) - u1)
-    zeta2 = 1 - Bt * (rdist ** 2) + (1 / dx) * (v2 - np.roll(v2, 1, axis=1) + np.roll(u2, 1, axis=0) - u2)
+    zeta1 = (
+        1
+        - Bt * (rdist**2)
+        + (1 / dx) * (v1 - np.roll(v1, 1, axis=1) + np.roll(u1, 1, axis=0) - u1)
+    )
+    zeta2 = (
+        1
+        - Bt * (rdist**2)
+        + (1 / dx) * (v2 - np.roll(v2, 1, axis=1) + np.roll(u2, 1, axis=0) - u2)
+    )
 
     zv1 = zeta1 * (v1 + np.roll(v1, 1, axis=1))
     zv2 = zeta2 * (v2 + np.roll(v2, 1, axis=1))
@@ -579,7 +615,7 @@ while t <= tmax + dt / 2:
     if mode == 1:
         if t % tpulseper == 0 and t != 0:
             tclock = t
-            locs = paircountN2(num, N-1)  # helper
+            locs = paircountN2(num, N - 1)  # helper
             wlayer = pairshapeN2(locs, x, y, Br2, Wsh, N, dx)
             # helper
             newWmat = pairfieldN2(L, dx, h1, wlayer)
@@ -590,15 +626,18 @@ while t <= tmax + dt / 2:
             Wmat = 0 * np.multiply(x, y)
             tclock = 0
 
-
     Fx1 = xflux(h1, u1, dx, dt) - kappa / dx * (h1 - np.roll(h1, 1, axis=1))  # helpers
     Fy1 = yflux(h1, v1, dx, dt) - kappa / dx * (h1 - np.roll(h1, 1, axis=0))
-    dh1dt = -(1 / dx) * (np.roll(Fx1, -1, axis=1) - Fx1 + np.roll(Fy1, -1, axis=0) - Fy1)
+    dh1dt = -(1 / dx) * (
+        np.roll(Fx1, -1, axis=1) - Fx1 + np.roll(Fy1, -1, axis=0) - Fy1
+    )
 
     if layers == 2.5:
         Fx2 = xflux(h2, u2, dx, dt) - kappa / dx * (h2 - np.roll(h2, 1, axis=1))
         Fy2 = yflux(h2, v2, dx, dt) - kappa / dx * (h2 - np.roll(h2, 1, axis=0))
-        dh2dt = -(1 / dx) * (np.roll(Fx2, -1, axis=1) - Fx2 + np.roll(Fy2, -1, axis=0) - Fy2)
+        dh2dt = -(1 / dx) * (
+            np.roll(Fx2, -1, axis=1) - Fx2 + np.roll(Fy2, -1, axis=0) - Fy2
+        )
 
     if tradf > 0:
         dh1dt = dh1dt - (1 / tradf) * (h1 - 1)
@@ -665,12 +704,58 @@ while t <= tmax + dt / 2:
         h1mat.append(h1)
         h2mat.append(h2)
 
-    if math.isnan(h1[0,0]):
-        print('break')
+        frames.append(zeta2)
+        time = fig.text(0.2, 0.9, 't = ' + str(t))
+        times.append(time)
+
+    if math.isnan(h1[0, 0]):
+        print("break")
         break
 
     tc += 1
     t = tc * dt
+
+
+#print(zeta2)
+#print(np.sum(zeta2))
+#df = pd.DataFrame(zeta2)
+#df.to_csv('file2.csv',index=False)
+control = pd.read_csv('file.csv', sep=',', header=None)
+control = np.asarray(control)
+testzeta = frames[-1][39:110,49:105] 
+print(np.max(testzeta))
+print(np.min(testzeta))
+testzeta_max = np.max(testzeta)
+testzeta_min = np.min(testzeta)
+control_max = np.max(control)
+control_min = np.min(control)
+numerator = testzeta_max - testzeta_min
+denominator = control_max - control_min
+slope = numerator/denominator
+intercept = testzeta_min - slope * control_min
+control = control * slope + intercept 
+print(np.max(control))
+print(np.min(control))
+print(np.sum(np.sum((np.abs(testzeta - control)))))
+
+cv0 = frames[0]
+im = ax.imshow(cv0, origin='lower') # Here make an AxesImage rather than contour
+cb = fig.colorbar(im, cax=cax)
+
+def animate(i):
+    arr = frames[i]
+    vmax = np.max(arr)
+    vmin = np.min(arr)
+    for txt in fig.texts:
+        txt.set_visible(False)
+    times[i].set_visible(True)
+    im.set_data(arr)
+    im.set_clim(vmin, vmax)
+
+#ani = ArtistAnimation(fig, frames, interval=250, repeat=True, blit=True)
+ani = animation.FuncAnimation(fig, animate, interval=200, frames=int(tmax/5))
+ani.save("test.mp4")
+plt.show()
 
 
 
